@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-textPrimary font-sans antialiased;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-surface/80 backdrop-blur-md border border-white/5 shadow-xl;
+  }
+  
+  .btn-primary {
+    @apply px-4 py-2 bg-primary text-white rounded-lg font-medium transition-all hover:bg-blue-600 hover:shadow-lg hover:shadow-primary/20 active:scale-95;
+  }
+  
+  .btn-secondary {
+    @apply px-4 py-2 bg-surface border border-border text-textPrimary rounded-lg font-medium transition-all hover:bg-gray-800 active:scale-95;
+  }
+}
+
+/* Custom Scrollbar for Chat */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500;
+}

@@ -5,28 +5,21 @@ A production-ready, locally-runnable multi-agent RAG system converted from the `
 ## Architecture
 
 ```
-User
+React Frontend  (frontend-react/)
+ ↓ (REST API)
+FastAPI Backend (backend/app/main.py)
  ↓
-Chat UI  (ui/)
- ↓ HTTP / REST
-OpenClaw Runtime — Node.js Gateway  (runtime/gateway/)
- │         │                │
-Skills   Connectors       Gateway
+LangGraph Orchestrator (backend/app/graph/supervisor_graph.py)
  ↓
-LangGraph Orchestrator  (orchestrator/)
- ↓
-Agent Mesh  (agents/)
+Agent Mesh (backend/app/agents/)
  │─────────────────┬──────────────────┐
- Plan-Forecast     Contract          General
- Agent             Agent             Agent
- │                 │
- └────────────────┘
+ SQL Agent         Forecast Agent     Contract Agent ... (13 total)
+ │                 │                  │
+ └─────────────────┴──────────────────┘
           ↓
-      Synthesizer
+     Synthesizer
  ↓
-Tools / APIs  (tools/)
- ↓
-Groq LLM  (openai/gpt-oss-120b)   +   ChromaDB  (data/chroma_db/)
+Groq LLM + ChromaDB + SQLite DB
 ```
 
 ## Quick Start
