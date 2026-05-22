@@ -62,7 +62,12 @@ def create_database():
         total_hours_json TEXT,
         total_project_cost FLOAT,
         travel_cost FLOAT,
-        other_cost FLOAT
+        other_cost FLOAT,
+        current_plan_version_id TEXT,
+        current_approved_plan_version_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        vectorization_status TEXT DEFAULT 'idle',
+        vectorization_error TEXT
     );
     """)
 

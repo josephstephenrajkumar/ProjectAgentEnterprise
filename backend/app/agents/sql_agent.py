@@ -199,27 +199,35 @@ Columns:
 """
 
 
-def _get_generation_prompt(glossary: str, pattern_hint: str = "") -> str:
+def _get_generation_prompt(glossary: str, pattern_hint: str = "", project_id: str = None, project_number: str = None) -> str:
+    context_str = ""
+    filter_rule = ""
+    if project_id or project_number:
+        context_str = f"\nThe current query context is for the project with Project ID: '{project_id or ''}' and Project Number: '{project_number or ''}'.\n"
+        filter_rule = f"\n2. ALWAYS filter your query by the current project context. Use `project_id = '{project_id}'` or `ProjectNumber LIKE '%{project_number}%'` where applicable to ensure you only return data for this specific project."
+    else:
+        filter_rule = "\n2. Filter your query by the project context if specified in the user's question."
+
     return f"""
 You are an expert SQLite Database Administrator.
 You have access to the following SQLite database schema:
 
 {SCHEMA_LAYER}
 {glossary}
-
+{context_str}
 Your task is to generate a dynamic SQL query to answer the user's question.
 
 CRITICAL RULES:
-1. ONLY USE COLUMNS LISTED IN THE SCHEMA ABOVE.
-2. NEVER USE 'subtotal', 'total_contract_value', 'currency', 'status' (use Proj_Stage), or 'Priority' (use Category). These are DEPRECATED.
-3. Use 'total_project_cost' for project financials.
-4. Use 'ActiveCurrency' instead of 'currency'.
-5. AVOID FAN-OUT: Never join the Project table to multiple one-to-many tables in a single query when calculating SUM or COUNT.
-6. STRING COMPARISON: Always use `LIKE '%term%'` instead of `=` for customer names or project numbers.
-7. DO NOT interpret project numbers as years. Do NOT add `strftime('%Y', ...)` filters unless the user explicitly mentions a year.
-8. DO NOT output markdown blocks. Output ONLY the raw SQL string or the word FALLBACK.
-9. For forecast questions, join through ProjectPlanVersion using is_current=1 for the latest version.
-10. For ETC/EAC/GM, use ForecastMetricSnapshot if available.
+1. ONLY USE COLUMNS LISTED IN THE SCHEMA ABOVE.{filter_rule}
+3. NEVER USE 'subtotal', 'total_contract_value', 'currency', 'status' (use Proj_Stage), or 'Priority' (use Category). These are DEPRECATED.
+4. Use 'total_project_cost' for project financials.
+5. Use 'ActiveCurrency' instead of 'currency'.
+6. AVOID FAN-OUT: Never join the Project table to multiple one-to-many tables in a single query when calculating SUM or COUNT.
+7. STRING COMPARISON: Always use `LIKE '%term%'` instead of `=` for customer names or project numbers.
+8. DO NOT interpret project numbers as years. Do NOT add `strftime('%Y', ...)` filters unless the user explicitly mentions a year.
+9. DO NOT output markdown blocks. Output ONLY the raw SQL string or the word FALLBACK.
+10. For forecast questions, join through ProjectPlanVersion using is_current=1 for the latest version.
+11. For ETC/EAC/GM, use ForecastMetricSnapshot if available.
 {pattern_hint}
 """
 
@@ -241,6 +249,20 @@ def sql_agent_node(state: AgentState) -> dict:
     debug = state.get("debug_log", "")
     llm = get_llm()
 
+    project_id = state.get("project_id")
+    project_number = state.get("project_number") or state.get("project_code")
+
+    # Retrieve ProjectNumber from SQLite if we only have project_id
+    if project_id and not project_number:
+        try:
+            conn = sqlite3.connect(settings.db_abs_path)
+            row = conn.execute("SELECT ProjectNumber FROM Project WHERE project_id = ?", (project_id,)).fetchone()
+            if row:
+                project_number = row[0]
+            conn.close()
+        except Exception:
+            pass
+
     # 1. Check SQL memory for cached templates
     glossary = get_semantic_glossary()
     pattern_hint = ""
@@ -256,7 +278,7 @@ def sql_agent_node(state: AgentState) -> dict:
     # 2. Generate SQL via LLM
     history = state.get("history", [])
     sanitized_history = history[-6:]
-    messages = [SystemMessage(content=_get_generation_prompt(glossary, pattern_hint))]
+    messages = [SystemMessage(content=_get_generation_prompt(glossary, pattern_hint, project_id, project_number))]
     for msg in sanitized_history:
         if msg.get("role") == "user":
             messages.append(HumanMessage(content=f"PAST QUERY: {msg['content']}"))
@@ -291,7 +313,16 @@ def sql_agent_node(state: AgentState) -> dict:
         conn = sqlite3.connect(settings.db_abs_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(generated_sql)
+        
+        # Prepare parameter bindings in case the LLM generated named parameters
+        bindings = {}
+        if project_id:
+            bindings["project_id"] = project_id
+        if project_number:
+            bindings["project_code"] = project_number
+            bindings["project_number"] = project_number
+
+        cursor.execute(generated_sql, bindings)
         rows = cursor.fetchall()
         for r in rows:
             results.append(dict(r))

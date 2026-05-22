@@ -112,10 +112,15 @@ def chat(req: ChatRequest):
     debug = result.get("debug_log", "")
     agent_tag = "general_agent"
     agents_used = []
+    if "Successfully answered from database" in debug:
+        agent_tag = "sql_agent"
+        agents_used = ["sql_agent"]
     for line in debug.splitlines():
         if "Router →" in line:
-            agent_tag = line.split("Router →")[-1].strip()
-            agents_used.append(agent_tag)
+            raw_tag = line.split("Router →")[-1].strip()
+            clean_tag = raw_tag.split(" (")[0].strip()
+            agent_tag = clean_tag
+            agents_used.append(clean_tag)
 
     return ChatResponse(
         response=new_response,

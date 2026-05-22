@@ -14,6 +14,7 @@ from app.config.settings import get_settings
 from app.api.chat import router as chat_router
 from app.api.forecast import router as forecast_router
 from app.api.agents import router as agents_router
+from app.api.projects import router as projects_router
 
 settings = get_settings()
 
@@ -28,26 +29,44 @@ async def lifespan(app: FastAPI):
 
 
 def _run_migrations():
-    """Apply the versioned financial forecast schema on startup."""
+    """Apply all versioned schema migrations on startup."""
     from app.db.engine import get_raw_connection
+    from app.services.migration_loader import apply_safe_alterations
 
-    migration_path = os.path.join(
-        os.path.dirname(__file__), "..", "migrations",
+    # 1. Apply safe alterations (dynamic table columns)
+    conn = get_raw_connection()
+    try:
+        apply_safe_alterations(conn)
+        conn.commit()
+        print("✅ Safe database alterations applied successfully.")
+    except Exception as e:
+        print(f"⚠️ Safe alterations warning: {e}")
+    finally:
+        conn.close()
+
+    # 2. Apply standard SQL schema migrations
+    migrations_dir = os.path.join(os.path.dirname(__file__), "..", "migrations")
+    migration_files = [
         "001_agentic_financial_forecast_schema.sql",
-    )
-    if os.path.exists(migration_path):
-        conn = get_raw_connection()
-        try:
-            with open(migration_path, "r") as f:
-                conn.executescript(f.read())
-            conn.commit()
-            print("✅ Migration 001 applied successfully.")
-        except Exception as e:
-            print(f"⚠️ Migration 001 warning: {e}")
-        finally:
-            conn.close()
-    else:
-        print(f"⚠️ Migration file not found: {migration_path}")
+        "002_agent_platform_tables.sql",
+    ]
+
+    for migration_file in migration_files:
+        migration_path = os.path.join(migrations_dir, migration_file)
+        label = migration_file.split("_")[0].upper()  # e.g. '001'
+        if os.path.exists(migration_path):
+            conn = get_raw_connection()
+            try:
+                with open(migration_path, "r") as f:
+                    conn.executescript(f.read())
+                conn.commit()
+                print(f"✅ Migration {label} applied successfully.")
+            except Exception as e:
+                print(f"⚠️ Migration {label} warning: {e}")
+            finally:
+                conn.close()
+        else:
+            print(f"⚠️ Migration file not found: {migration_path}")
 
 
 # ── App factory ─────────────────────────────────────────────────────────────
@@ -74,6 +93,7 @@ def create_app() -> FastAPI:
     )
 
     # Mount API routers
+    app.include_router(projects_router)
     app.include_router(chat_router)
     app.include_router(forecast_router)
     app.include_router(agents_router)

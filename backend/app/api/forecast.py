@@ -89,3 +89,66 @@ def get_latest_project_metrics(project_id: str):
     if not metrics:
         raise HTTPException(status_code=404, detail="No metrics found for this project.")
     return metrics
+
+
+@router.get("/projects/{project_id}/dashboard-summary")
+def get_dashboard_summary(project_id: str):
+    """Retrieve latest forecast metrics and active risks for dashboard display."""
+    import sqlite3
+    from app.config.settings import get_settings
+    from app.services.raid_service import get_raid_items
+    
+    settings = get_settings()
+    try:
+        # 1. Fetch latest metrics snapshot
+        metrics = get_latest_metrics(project_id)
+        
+        # 2. Fetch RAID items
+        raid_items = get_raid_items(project_id)
+        active_risks = [r for r in raid_items if r.get("Type") == "Risk" and r.get("Status") == "Open"]
+        high_priority_risks = [
+            r for r in active_risks 
+            if r.get("Category") in ("High", "Critical", "Red") 
+            or (r.get("financial_impact") and r.get("financial_impact") > 50000)
+        ]
+        
+        # 3. Retrieve baseline reference
+        conn = sqlite3.connect(settings.db_abs_path)
+        conn.row_factory = sqlite3.Row
+        proj = conn.execute(
+            "SELECT Baseline_Rev, Baseline_Cost FROM Project WHERE project_id = ?", 
+            (project_id,)
+        ).fetchone()
+        conn.close()
+        
+        baseline_rev = proj["Baseline_Rev"] if (proj and proj["Baseline_Rev"]) else 0
+        baseline_cost = proj["Baseline_Cost"] if (proj and proj["Baseline_Cost"]) else 0
+        
+        res = {
+            "eac_revenue": 0.0,
+            "eac_cost": 0.0,
+            "gm_percent": 0.0,
+            "baseline_revenue": float(baseline_rev),
+            "baseline_cost": float(baseline_cost),
+            "active_risks_count": len(active_risks),
+            "high_priority_risks_count": len(high_priority_risks),
+            "revenue_variance_percent": 0.0,
+            "gm_variance_percent": 0.0
+        }
+        
+        if metrics:
+            res["eac_revenue"] = metrics.get("eac_revenue", 0.0)
+            res["eac_cost"] = metrics.get("eac_cost", 0.0)
+            res["gm_percent"] = metrics.get("gm_percent", 0.0)
+            
+            # Calculate variance from baseline
+            if baseline_rev > 0:
+                res["revenue_variance_percent"] = ((res["eac_revenue"] - baseline_rev) / baseline_rev) * 100
+                
+            baseline_gm = ((baseline_rev - baseline_cost) / baseline_rev * 100) if baseline_rev > 0 else 0.0
+            res["gm_variance_percent"] = res["gm_percent"] - baseline_gm
+            
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dashboard summary calculation error: {e}")
+

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # ── Database ────────────────────────────────────────────────────────────
     sqlite_db_path: str = "./data/openclaw.db"
+    kuzu_db_path: str = "./data/kuzudb"
 
     # ── Vector Store ────────────────────────────────────────────────────────
     chroma_db_path: str = "./data/chroma_db"
@@ -48,6 +49,16 @@ class Settings(BaseSettings):
         if os.path.isabs(self.sqlite_db_path):
             return self.sqlite_db_path
         return os.path.abspath(os.path.join(project_root, self.sqlite_db_path))
+
+    @property
+    def kuzu_abs_path(self) -> str:
+        """Resolve the KuzuDB path relative to the project root."""
+        project_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        if os.path.isabs(self.kuzu_db_path):
+            return self.kuzu_db_path
+        return os.path.abspath(os.path.join(project_root, self.kuzu_db_path))
 
     @property
     def chroma_abs_path(self) -> str:

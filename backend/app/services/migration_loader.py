@@ -28,6 +28,9 @@ def apply_safe_alterations(conn: sqlite3.Connection) -> None:
     """Add new columns to existing tables without breaking them."""
     safe_add_column(conn, "Project", "current_plan_version_id", "TEXT")
     safe_add_column(conn, "Project", "current_approved_plan_version_id", "TEXT")
+    safe_add_column(conn, "Project", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP")
+    safe_add_column(conn, "Project", "vectorization_status", "TEXT DEFAULT 'idle'")
+    safe_add_column(conn, "Project", "vectorization_error", "TEXT")
     safe_add_column(conn, "RAIDitems", "plan_version_id", "TEXT")
     safe_add_column(conn, "RAIDitems", "impact_area", "TEXT")
     safe_add_column(conn, "RAIDitems", "financial_impact", "REAL")
@@ -114,7 +117,7 @@ def migrate_project_baseline(project_id: str) -> str:
         # Begin explicit transaction
         conn.execute("BEGIN")
 
-        reporting_month = project["startdateBaseline"] if "startdateBaseline" in project.keys() else "2026-04-01"
+        reporting_month = project["startdateBaseline"] if project["startdateBaseline"] else "2026-04-01"
 
         plan_version_id = create_plan_version(
             conn, project_id, "Sales Baseline", "SALES_BASELINE", "SYSTEM_JSON",

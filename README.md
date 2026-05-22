@@ -1,165 +1,148 @@
-# OpenClaw Multi-Agent System
+# ProjectAgentEnterprise: Multi-Agent Financial Management System
 
-A production-ready, locally-runnable multi-agent RAG system converted from the `Project_Management_MultiAgentV2` notebook.
+A production-ready, locally-runnable multi-agent AI system designed for project financial planning, forecast versioning, and operational governance. The architecture features a modern **React/Vite** frontend and a **FastAPI/LangGraph** backend with a relational plan versioning schema.
 
-## Architecture
+---
 
-```
-React Frontend  (frontend-react/)
- ↓ (REST API)
+## Architecture Overview
+
+```text
+React Frontend (frontend-react/)
+       ↓ (REST API on port 8000)
 FastAPI Backend (backend/app/main.py)
- ↓
-LangGraph Orchestrator (backend/app/graph/supervisor_graph.py)
- ↓
+       ↓ (Service Layer / SQLite)
+LangGraph Supervisor Orchestrator (backend/app/graph/supervisor_graph.py)
+       ↓
 Agent Mesh (backend/app/agents/)
- │─────────────────┬──────────────────┐
- SQL Agent         Forecast Agent     Contract Agent ... (13 total)
- │                 │                  │
- └─────────────────┴──────────────────┘
-          ↓
-     Synthesizer
- ↓
-Groq LLM + ChromaDB + SQLite DB
+ ├── Supervisor Router Agent  ├── Forecast Variance Agent
+ ├── SQL Agent                ├── ETC/EAC Metrics Agent
+ ├── RAG Agent                ├── Revenue Recognition Agent
+ ├── Contract/SOW Agent       ├── RAID Recommendation Agent
+ ├── Data Quality Agent       └── MBR Summary Agent
 ```
 
-## Quick Start
+---
+
+## Quick Start & Installation
 
 ### 1. Prerequisites
+* **Python 3.10+** (WSL/Ubuntu environment recommended)
+* **Node.js 18+** & **npm**
+* A [Groq Cloud Account](https://console.groq.com) and an API key.
 
-- Python 3.10+
-- Node.js 18+
-- A [Groq](https://console.groq.com) account with an API key
-
-### 2. Set up environment
-
+### 2. Configure Environment Variables
+Copy `.env.example` in the root folder to `.env` and fill in your credentials:
 ```bash
-cd /home/joseph/projectAgent/openclaw-multiagent
+cd /home/joseph/ProjectAgentEnterprise
 cp .env.example .env
-# Edit .env if needed (model name, paths, etc.)
+```
+Ensure `.env` contains:
+```env
+GROQ_API_KEY="your-groq-api-key"
+SQLITE_DB_PATH="./data/openclaw.db"
+CHROMA_DB_PATH="./data/chroma_db"
+EMBEDDING_MODEL="all-mpnet-base-v2"
 ```
 
-### 3. Install Python dependencies
-
+### 3. Initialize the SQLite Database
+If the SQLite database does not exist or needs to be reinitialized, run the setup script:
 ```bash
-pip install -r requirements.txt
+python tools/init_sqlite_db.py
 ```
-
-### 4. Add your documents
-
-Place documents (PDF, DOCX, XLSX) into `data/docs/`.  
-Each **top-level file or folder** becomes its own agent collection:
-
-```
-data/docs/
-├── contract.pdf          → contract_collection
-└── plan-forecast.xlsx    → plan-forecast_collection
-```
-
-### 5. Ingest documents
-
-```bash
-cd /home/joseph/projectAgent/openclaw-multiagent
-python tools/ingestion.py
-```
-
-Or use the **Re-Ingest Docs** button in the Chat UI.
-
-### 6. Start the Python orchestrator
-
-```bash
-cd orchestrator
-python main.py
-# → FastAPI on http://localhost:8000
-```
-
-### 7. Install and start the Node.js gateway
-
-```bash
-cd runtime
-npm install
-node gateway/server.js
-# → Chat UI on http://localhost:3000
-```
-
-### 8. Open the Chat UI
-
-Navigate to **http://localhost:3000**
+*Note: This creates the baseline tables. The backend will automatically apply migrations (`ProjectPlanVersion`, etc.) on startup.*
 
 ---
 
-## Configuration (`.env`)
-
-| Variable | Default | Description |
-|---|---|---|
-| `GROQ_API_KEY` | _(required)_ | Groq cloud API key |
-| `EMBEDDING_MODEL` | `all-mpnet-base-v2` | HuggingFace embedding model |
-| `CHROMA_DB_PATH` | `./data/chroma_db` | ChromaDB persistence path |
-| `SOURCE_DATA_DIR` | `./data/docs` | Document source folder |
-| `ORCHESTRATOR_PORT` | `8000` | FastAPI server port |
-| `GATEWAY_PORT` | `3000` | Node.js gateway port |
-
----
-
-## Agent Routing Logic
-
-| Query type | Agent | Collection |
-|---|---|---|
-| Planning, hours, forecast, resources | **Plan-Forecast Agent** | `plan-forecast_collection` |
-| Contracts, SOW, milestones, pricing | **Contract Agent** | `contract_collection` |
-| Both / compare / synthesise | **Both → Synthesizer** | All collections |
-| General / off-topic | **General Agent** | _(no RAG)_ |
-
-The Router **dynamically discovers** collection topics on startup using the LLM — no hardcoded keywords.
+### 4. Running the Backend Server
+1. Navigate to the project root directory:
+   ```bash
+   cd /home/joseph/ProjectAgentEnterprise
+   ```
+2. Install Python dependencies:
+   ```bash
+   pip install -r backend/requirements.txt
+   ```
+3. Start the FastAPI backend via Uvicorn:
+   ```bash
+   python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+   *The server runs at **http://localhost:8000**.*
 
 ---
 
-## API Reference
-
-### FastAPI Orchestrator (port 8000)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Health check |
-| `POST` | `/chat` | `{"query": "..."}` → `{"response", "debug_log", "agent"}` |
-| `POST` | `/ingest` | Trigger document re-ingestion |
-
-### Node.js Gateway (port 3000)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Chat UI |
-| `GET` | `/health` | Gateway health |
-| `POST` | `/chat` | Proxied to FastAPI `/chat` |
-| `POST` | `/ingest` | Proxied to FastAPI `/ingest` |
+### 5. Running the React Frontend
+1. Open a new terminal session and navigate to the frontend directory:
+   ```bash
+   cd /home/joseph/ProjectAgentEnterprise/frontend-react
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the Vite development server:
+   ```bash
+   npm run dev
+   ```
+   *The interface runs at **http://localhost:5173** (or the URL output in your terminal).*
 
 ---
 
-## Project Structure
+## Project Directory Structure
 
+```text
+ProjectAgentEnterprise/
+├── backend/
+│   ├── app/
+│   │   ├── api/             # REST controllers (chat, forecast, agents)
+│   │   ├── agents/          # LangGraph agent definitions and templates
+│   │   ├── config/          # Settings configurations (.env loader)
+│   │   ├── db/              # SQLite SQLAlchemy engine and session makers
+│   │   ├── graph/           # LangGraph supervisor workflow definition
+│   │   ├── memory/          # Persistent conversation and session storage
+│   │   ├── rag/             # Document retrieval handlers (ChromaDB)
+│   │   ├── services/        # Business logic services (approvals, metrics)
+│   │   └── main.py          # FastAPI application entrypoint
+│   ├── migrations/          # SQLite schema SQL migration definitions
+│   └── requirements.txt     # Backend python dependencies
+│
+├── frontend-react/
+│   ├── src/
+│   │   ├── components/      # Common components (Layout, Navigation)
+│   │   ├── pages/           # Pages (Dashboard, ChatConsole, DataManager)
+│   │   ├── App.tsx          # Main React routes
+│   │   └── main.tsx         # React DOM renderer
+│   ├── package.json         # Node scripts & packages
+│   └── vite.config.ts       # Vite config
+│
+├── data/                    # SQLite database and ChromaDB vector files
+├── docs/                    # Architectural and operational documentation
+└── tools/                   # Database setup and script utilities
 ```
-openclaw-multiagent/
-├── ui/                      # Chat UI (HTML/CSS/JS)
-├── runtime/                 # OpenClaw Node.js Runtime
-│   ├── gateway/server.js    # HTTP Gateway + static server
-│   ├── skills/ragSkill.js   # RAG skill wrapper
-│   └── connectors/          # Data source connectors
-├── orchestrator/            # Python LangGraph
-│   ├── main.py              # FastAPI app
-│   ├── graph.py             # LangGraph StateGraph
-│   ├── router.py            # Dynamic router node
-│   ├── state.py             # AgentState TypedDict
-│   └── llm_factory.py       # Groq LLM factory
-├── agents/                  # Agent Mesh nodes
-│   ├── forecast_agent.py
-│   ├── contract_agent.py
-│   ├── general_agent.py
-│   └── synthesizer.py
-├── tools/                   # RAG Tools / APIs
-│   ├── ingestion.py         # Document ingestion
-│   └── retrieval.py         # ChromaDB retrieval
-├── data/
-│   ├── docs/                # ← Put your documents here
-│   └── chroma_db/           # Auto-created vector store
-├── .env.example
-└── requirements.txt
-```
+
+---
+
+## API Documentation
+
+The FastAPI backend exposes the following endpoint routing routes on port `8000`:
+
+### 1. Chat Console Interface
+* **`POST /api/chat`**
+  * **Payload**: `{"query": "...", "session_id": "..."}`
+  * **Response**: `{"response": "...", "route": "...", "debug_log": "..."}`
+  * Routes queries through the LangGraph supervisor router to generate SQL or fetch RAG context.
+
+### 2. Project Financial Forecasting
+* **`GET /api/forecast/versions/{project_id}`**
+  * Fetches the plan version history for a project.
+* **`POST /api/forecast/upload`**
+  * Uploads an Excel forecast spreadsheet to draft/submit a new plan version.
+* **`POST /api/forecast/approve/{plan_version_id}`**
+  * Formally approves a plan version, making it the active baseline.
+
+### 3. Agent Performance and Metrics
+* **`GET /api/agents`**
+  * Retrieves list of registered agent capabilities.
+* **`GET /api/agents/approval-queue`**
+  * Lists outstanding tasks in the Human-in-the-Loop approval queue.
+* **`POST /api/agents/approve-action/{approval_id}`**
+  * Authorizes or rejects a proposed agentic edit.
