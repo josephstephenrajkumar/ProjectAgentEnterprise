@@ -7,7 +7,7 @@ import json
 BASE_URL = "http://localhost:8000/api"
 
 # Ingestion files location in WSL
-DOCS_DIR = "/home/joseph/ProjectAgentEnterprise/data/docs/projects/202021"
+DOCS_DIR = "/home/joseph/ProjectAgentEnterprise/data/docs/projects/26edd012-0d33-40f8-b92e-790c3d93bc6c"
 contract_path = os.path.join(DOCS_DIR, "Boston_Property_SMAX_Migration_SOW_v0.4.docx")
 estimation_path = os.path.join(DOCS_DIR, "Boston Property SMAX Implementation - estimations with milestones.xlsx")
 erp_path = os.path.join(DOCS_DIR, "Boston property Project Data - ERP.xlsx")

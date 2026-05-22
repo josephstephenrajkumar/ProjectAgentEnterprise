@@ -128,3 +128,19 @@ def chat(req: ChatRequest):
         agents_used=agents_used if agents_used else ["sql_agent"],
         debug_log=debug,
     )
+
+
+from pydantic import BaseModel
+
+class ClearChatRequest(BaseModel):
+    session_id: str = "default"
+
+@router.post("/chat/clear")
+def clear_chat(req: ClearChatRequest):
+    """Clear chat sessions."""
+    global SESSION_STORE
+    session_id = req.session_id or "default"
+    SESSION_STORE[session_id] = []
+    _save_sessions(SESSION_STORE)
+    return {"status": "success", "message": f"Chat history for session '{session_id}' cleared."}
+

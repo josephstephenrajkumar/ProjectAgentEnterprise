@@ -25,7 +25,44 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """Run database migrations and schema setup on startup."""
     _run_migrations()
+    _clean_orphaned_records()
     yield
+
+
+def _clean_orphaned_records():
+    """Delete orphaned database records where project_id does not exist in the Project table."""
+    from app.db.engine import get_raw_connection
+    conn = get_raw_connection()
+    try:
+        cursor = conn.cursor()
+        
+        # Tables with project_id
+        cursor.execute("DELETE FROM ProjectWorkPackage WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM ProjectWeeklySummary WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM RAIDitems WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM MBRitems WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM ProjectPlanVersion WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM ActualFinancialMonth WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM ForecastMetricSnapshot WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM RevenueRecognitionTrace WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM AgentActionLog WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        cursor.execute("DELETE FROM HumanApprovalQueue WHERE project_id NOT IN (SELECT project_id FROM Project)")
+        
+        # Tables with plan_version_id
+        cursor.execute("DELETE FROM PlanResource WHERE plan_version_id NOT IN (SELECT plan_version_id FROM ProjectPlanVersion)")
+        cursor.execute("DELETE FROM PlanResourceMonth WHERE plan_resource_id NOT IN (SELECT plan_resource_id FROM PlanResource)")
+        cursor.execute("DELETE FROM PlanInvoiceMilestone WHERE plan_version_id NOT IN (SELECT plan_version_id FROM ProjectPlanVersion)")
+        cursor.execute("DELETE FROM PlanRevenueMilestone WHERE plan_version_id NOT IN (SELECT plan_version_id FROM ProjectPlanVersion)")
+        cursor.execute("DELETE FROM PlanTravelCost WHERE plan_version_id NOT IN (SELECT plan_version_id FROM ProjectPlanVersion)")
+        cursor.execute("DELETE FROM PlanOtherCost WHERE plan_version_id NOT IN (SELECT plan_version_id FROM ProjectPlanVersion)")
+        cursor.execute("DELETE FROM PlanMonthlySummary WHERE plan_version_id NOT IN (SELECT plan_version_id FROM ProjectPlanVersion)")
+        
+        conn.commit()
+        print("🧹 Cleaned up orphaned database records successfully.")
+    except Exception as e:
+        print(f"⚠️ Error cleaning up orphaned database records: {e}")
+    finally:
+        conn.close()
 
 
 def _run_migrations():

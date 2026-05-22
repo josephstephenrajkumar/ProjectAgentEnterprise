@@ -19,6 +19,7 @@ Usage in supervisor_graph.py:
 import json
 import sqlite3
 import uuid
+import inspect
 from typing import Any
 
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -121,6 +122,116 @@ def _tool_send_email(context: Any, **kwargs) -> dict:
     return {"status": "queued", "note": "Email dispatch requires human approval."}
 
 
+def _tool_create_raid(
+    project_id: str,
+    query: str,
+    agent_id: str,
+    requires_approval: bool,
+    **kwargs,
+) -> dict | None:
+    """Uses the LLM to extract RAID item parameters from query and insert/queue them."""
+    llm = get_llm()
+    
+    # Prompt for parsing the user query
+    system_prompt = """You are an expert project management assistant.
+Your task is to analyze the user query and determine if the user is explicitly requesting to add, log, create, or record a new RAID (Risk, Assumption, Issue, Dependency) item.
+
+Current Date: 2026-05-22
+
+If the user is NOT explicitly requesting to add/create a new RAID item (for example, they are only listing, reading, summarizing, or querying existing risks), you must set "is_raid_request" to false.
+
+If they ARE requesting to add/create a new RAID item, set "is_raid_request" to true and extract the details into the following JSON schema:
+{
+  "is_raid_request": true,
+  "item_type": "Risk" | "Assumption" | "Issue" | "Dependency",
+  "category": "Schedule" | "Budget" | "Scope" | "Resources" | "Contract" | "General",
+  "description": "...",
+  "owner": "...",
+  "due_date": "YYYY-MM-DD",
+  "mitigating_action": "...",
+  "status": "Open" | "Closed",
+  "roam": "Resolved" | "Owned" | "Accepted" | "Mitigated",
+  "impact_area": "Schedule" | "Cost" | "Quality" | "None",
+  "financial_impact": 0.0,
+  "schedule_impact_days": 0
+}
+
+Guidelines for extraction:
+- "item_type": Map the item type. If they say "risk of delay", it's "Risk".
+- "category": Categorize the item based on context.
+- "due_date": Extract any date mentioned. If no date is specified, use 2026-06-05 (14 days from 2026-05-22). Format as YYYY-MM-DD.
+- "owner": If an owner is mentioned, extract it; otherwise default to "Unassigned".
+- "mitigating_action": Extract any action or reasons mentioned for mitigation.
+- "status": Default to "Open".
+- "roam": Map to ROAM category (Resolved, Owned, Accepted, Mitigated). Default to "Mitigated" for risks if there is a mitigation/action.
+- "impact_area": Set based on the query (e.g. Schedule, Cost, Quality, or None).
+- "financial_impact": Extract decimal number if any cost impact is mentioned, else 0.0.
+- "schedule_impact_days": Extract integer number of days if schedule impact is mentioned (e.g. "delay of two weeks" -> 14 days), else 0.
+
+Response MUST be a single valid JSON block and nothing else."""
+
+    try:
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=query),
+        ])
+        content = response.content.strip()
+        
+        # Clean markdown code fences if present
+        if content.startswith("```"):
+            lines = content.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            content = "\n".join(lines).strip()
+            
+        data = json.loads(content)
+        
+        if not data.get("is_raid_request"):
+            return None
+            
+        # Extract fields to perform write/approval action
+        if requires_approval:
+            from app.services.approval_service import create_approval_request
+            approval_id = create_approval_request(
+                project_id=project_id,
+                approval_type="RaidItemCreation",
+                description=f"Add RAID {data.get('item_type')}: {data.get('description')[:60]}...",
+                proposed_changes=data,
+                requested_by_agent=agent_id
+            )
+            return {
+                "status": "PendingApproval",
+                "approval_id": approval_id,
+                "detail": data
+            }
+        else:
+            from app.services.raid_service import create_raid_item
+            raid_id = create_raid_item(
+                project_id=project_id,
+                item_type=data.get("item_type", "Risk"),
+                category=data.get("category", "General"),
+                description=data.get("description", ""),
+                owner=data.get("owner", "Unassigned"),
+                due_date=data.get("due_date"),
+                mitigating_action=data.get("mitigating_action", ""),
+                status=data.get("status", "Open"),
+                impact_area=data.get("impact_area"),
+                financial_impact=float(data.get("financial_impact") or 0.0),
+                schedule_impact_days=int(data.get("schedule_impact_days") or 0),
+                roam=data.get("roam", "")
+            )
+            return {
+                "status": "Created",
+                "raid_id": raid_id,
+                "detail": data
+            }
+    except Exception as e:
+        print(f"Error in _tool_create_raid: {e}")
+        return {"status": "Error", "message": str(e)}
+
+
 TOOL_REGISTRY: dict[str, callable] = {
     "forecast_version_tool":     _tool_forecast_version,
     "metrics_calculator_tool":   _tool_metrics_calculator,
@@ -131,6 +242,7 @@ TOOL_REGISTRY: dict[str, callable] = {
     "approval_gate_tool":        _tool_approval_gate,
     "summarize_tool":            _tool_summarize,
     "send_email_tool":           _tool_send_email,
+    "create_raid_tool":          _tool_create_raid,
 }
 
 
@@ -278,28 +390,27 @@ class GenericAgentRunner:
                 continue
 
             try:
-                if tool_id == "summarize_tool":
-                    # Summarize passes accumulated context + prompt template
-                    result = tool_fn(
-                        context=accumulated_context,
-                        system_prompt_template=self.config["system_prompt_template"],
-                        query=query,
-                        project_id=project_id,
-                    )
-                elif tool_id == "approval_gate_tool":
-                    if self.config.get("requires_approval"):
-                        result = tool_fn(
-                            agent_id=self.agent_id,
-                            project_id=project_id,
-                            payload=accumulated_context,
-                        )
-                    else:
-                        continue
-                elif tool_id == "rag_search_tool":
-                    result = tool_fn(query=query, project_id=project_id)
-                else:
-                    result = tool_fn(project_id=project_id)
+                if tool_id == "approval_gate_tool" and not self.config.get("requires_approval"):
+                    continue
 
+                sig = inspect.signature(tool_fn)
+                kwargs = {}
+                if "project_id" in sig.parameters:
+                    kwargs["project_id"] = project_id
+                if "query" in sig.parameters:
+                    kwargs["query"] = query
+                if "agent_id" in sig.parameters:
+                    kwargs["agent_id"] = self.agent_id
+                if "requires_approval" in sig.parameters:
+                    kwargs["requires_approval"] = bool(self.config.get("requires_approval"))
+                if "context" in sig.parameters:
+                    kwargs["context"] = accumulated_context
+                if "system_prompt_template" in sig.parameters:
+                    kwargs["system_prompt_template"] = self.config.get("system_prompt_template")
+                if "payload" in sig.parameters:
+                    kwargs["payload"] = accumulated_context
+
+                result = tool_fn(**kwargs)
                 accumulated_context[tool_id] = result
                 debug += f"\n  ✔ {tool_id}: completed"
 
@@ -322,20 +433,22 @@ class GenericAgentRunner:
         }
 
     def _extract_project_id(self, query: str) -> str:
-        """Use the LLM to extract a project number from the query."""
+        """Use the LLM to extract a project identifier (Project Number, Opportunity ID, project code, or customer name) from the query."""
         llm = get_llm()
         try:
             response = llm.invoke([
                 SystemMessage(content=(
-                    "Extract the Project Number from this query. "
-                    "Return ONLY the raw identifier string (e.g. '202021'). "
-                    "Return NONE if not present."
+                    "You are a strict data extractor. Your job is to extract the project identifier (Project Number, Opportunity ID, project code, or customer/project name) from the user's query. "
+                    "Output ONLY the raw identifier string (e.g., 'boston' or 'boston-001') and absolutely nothing else. No explanation, no filler, no markdown. "
+                    "Strip generic trailing nouns like 'project', 'sow', 'contract', 'opportunity' (e.g., for 'boston project', extract 'boston'). "
+                    "If not found, output exactly: NONE"
                 )),
                 HumanMessage(content=query),
             ])
             result = response.content.strip()
             return "" if result in ("NONE", "none", "") else result
-        except Exception:
+        except Exception as e:
+            print(f"Error in _extract_project_id: {e}")
             return ""
 
 

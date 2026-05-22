@@ -6,8 +6,8 @@ import os
 url = "http://localhost:8000/api/projects"
 
 # Files to upload
-contract_file_path = "/home/joseph/ProjectAgentEnterprise/data/docs/projects/202021/Boston_Property_SMAX_Migration_SOW_v0.4.docx"
-estimation_file_path = "/home/joseph/ProjectAgentEnterprise/data/docs/projects/202021/Boston Property SMAX Implementation - estimations with milestones.xlsx"
+contract_file_path = "/home/joseph/ProjectAgentEnterprise/data/docs/projects/26edd012-0d33-40f8-b92e-790c3d93bc6c/Boston_Property_SMAX_Migration_SOW_v0.4.docx"
+estimation_file_path = "/home/joseph/ProjectAgentEnterprise/data/docs/projects/26edd012-0d33-40f8-b92e-790c3d93bc6c/Boston Property SMAX Implementation - estimations with milestones.xlsx"
 
 # Prepare payload
 data = {

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { 
+  Plus, CheckCircle, AlertCircle, Loader2, FileText, 
+  BarChart2, FileSpreadsheet 
+} from 'lucide-react';
 import axios from 'axios';
 
 export default function CreateProject() {
@@ -18,6 +21,7 @@ export default function CreateProject() {
   const [pollingProjectId, setPollingProjectId] = useState<string | null>(null);
   const [vectorizationStatus, setVectorizationStatus] = useState<string>('idle');
   const [vectorizationError, setVectorizationError] = useState<string>('');
+  const [pollCount, setPollCount] = useState(0);
 
   const intervalRef = useRef<any>(null);
 
@@ -25,6 +29,7 @@ export default function CreateProject() {
     if (pollingProjectId) {
       setVectorizationStatus('processing');
       setVectorizationError('');
+      setPollCount(0);
 
       intervalRef.current = setInterval(async () => {
         try {
@@ -33,6 +38,8 @@ export default function CreateProject() {
           const errorMsg = res.data.vectorization_error || '';
 
           setVectorizationStatus(status);
+          setPollCount(prev => prev + 1);
+          
           if (status === 'completed' || status === 'failed') {
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
@@ -44,7 +51,7 @@ export default function CreateProject() {
         } catch (err) {
           console.error('Error polling project status:', err);
         }
-      }, 2000);
+      }, 5000);
     }
 
     return () => {
@@ -57,7 +64,7 @@ export default function CreateProject() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectName || !projectCode || !contractFile || !estimationFile) {
-      setError('Please fill in all required fields and upload the required files.');
+      setError('Please fill in all required fields and upload the SOW and estimation files.');
       return;
     }
 
@@ -93,210 +100,269 @@ export default function CreateProject() {
       setProjectFile(null);
     } catch (err: any) {
       console.error(err);
-      // Simulate success for frontend demonstration if backend is not active
-      setSuccess(true);
-      setError('Simulated ingestion success (Backend not connected).');
+      setError(err.response?.data?.detail || 'Failed to trigger project ingestion pipeline.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleQuickFill = () => {
+    setProjectName('Boston SMAX Migration');
+    setProjectCode('BOSTON-001');
+    setOpportunityId('O-1932849');
+  };
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <header className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-2">
-            📁 Create New Project
-          </h1>
-          <p className="text-textSecondary mt-2">Ingest a new project by uploading the SOW contract and estimation sheets.</p>
-        </div>
+    <div className="h-full flex flex-col space-y-6">
+      <header>
+        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-2">
+          📁 Project Ingestion Cockpit
+        </h1>
+        <p className="text-textSecondary mt-2">Initialize new projects by linking opportunity IDs and parsing SOW estimation files.</p>
       </header>
 
-      <form onSubmit={handleSubmit} className="space-y-6 glass-panel rounded-2xl p-8 shadow-2xl">
-        {success && (
-          <div className="bg-secondary/10 border border-secondary/20 text-secondary p-4 rounded-xl flex items-start gap-3">
-            <CheckCircle className="shrink-0 mt-0.5" size={18} />
-            <div>
-              <p className="font-semibold">Project Ingested Successfully!</p>
-              <p className="text-xs opacity-80">The multi-agent system is now parsing and vectorizing files in the background.</p>
-              {error && <p className="text-xs font-mono mt-1 text-orange-400">{error}</p>}
-            </div>
-          </div>
-        )}
-
-        {vectorizationStatus !== 'idle' && (
-          <div className={`p-5 rounded-xl border backdrop-blur-md transition-all duration-300 shadow-lg ${
-            vectorizationStatus === 'processing'
-              ? 'bg-blue-950/40 border-blue-500/30 text-blue-200'
-              : vectorizationStatus === 'completed'
-              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
-              : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
-          }`}>
-            <div className="flex gap-4 items-start">
-              <div className="mt-0.5">
-                {vectorizationStatus === 'processing' && (
-                  <Loader2 className="animate-spin text-blue-400 animate-duration-1000" size={20} />
-                )}
-                {vectorizationStatus === 'completed' && (
-                  <CheckCircle className="text-emerald-400" size={20} />
-                )}
-                {vectorizationStatus === 'failed' && (
-                  <AlertCircle className="text-rose-400" size={20} />
-                )}
-              </div>
-              <div className="flex-1">
-                <h4 className="font-bold text-sm text-white mb-1">
-                  {vectorizationStatus === 'processing' && 'Vectorizing SOW Contract...'}
-                  {vectorizationStatus === 'completed' && 'SOW Contract Vectorized Successfully!'}
-                  {vectorizationStatus === 'failed' && 'SOW Contract Vectorization Failed'}
-                </h4>
-                <p className="text-xs opacity-90 leading-relaxed">
-                  {vectorizationStatus === 'processing' && 'The AI multi-agent system is currently parsing, chunking, and embedding the contract document in the background. This will make it available for real-time SOW queries in the Chat Console.'}
-                  {vectorizationStatus === 'completed' && 'The contract documents have been parsed and loaded into ChromaDB. You can now analyze deliverables, milestones, and payment terms in the Chat Console.'}
-                  {vectorizationStatus === 'failed' && `An error occurred during document ingestion: ${vectorizationError || 'Unknown ingestion failure.'}`}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
-              Project Name *
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Boston SMAX Migration"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-white placeholder-textSecondary focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
-              required
-            />
+      <form onSubmit={handleSubmit} className="dual-panel-grid">
+        
+        {/* LEFT PANEL: Metadata inputs */}
+        <div className="glass-panel p-6 rounded-2xl space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-base font-bold text-white uppercase tracking-wider">Project Metadata</h3>
+            <button
+              type="button"
+              onClick={handleQuickFill}
+              className="text-[10px] font-bold text-primary hover:text-indigo-400 bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+            >
+              ⚡ Quick Fill (O-1932849)
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
-                Project Code *
+                Project Name *
               </label>
               <input
                 type="text"
-                placeholder="e.g. BOSTON-001"
-                value={projectCode}
-                onChange={(e) => setProjectCode(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-white placeholder-textSecondary focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                placeholder="e.g. Boston SMAX Migration"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                className="form-input-field"
                 required
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
-                Opportunity ID
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. O-1932849"
-                value={opportunityId}
-                onChange={(e) => setOpportunityId(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-white placeholder-textSecondary focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
-              />
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
+                  Project Code *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. BOSTON-001"
+                  value={projectCode}
+                  onChange={(e) => setProjectCode(e.target.value)}
+                  className="form-input-field"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
+                  Opportunity ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. O-1932849"
+                  value={opportunityId}
+                  onChange={(e) => setOpportunityId(e.target.value)}
+                  className="form-input-field"
+                />
+              </div>
             </div>
+          </div>
+
+          {/* Verification / Progress status inside Left Panel */}
+          {(success || vectorizationStatus !== 'idle') && (
+            <div className="border-t border-border pt-5 space-y-4">
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest">Ingestion Pipeline Monitor</h4>
+              
+              {success && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-3 rounded-xl flex items-start gap-2.5 text-xs">
+                  <CheckCircle className="shrink-0 mt-0.5" size={15} />
+                  <div>
+                    <p className="font-semibold">Project Ingestion Triggered</p>
+                    <p className="opacity-80 text-[10px]">Record registered. Background parsing schedules initiated.</p>
+                  </div>
+                </div>
+              )}
+
+              {vectorizationStatus !== 'idle' && (
+                <div className={`p-4 rounded-xl border text-xs space-y-3 ${
+                  vectorizationStatus === 'processing' ? 'bg-primary/5 border-primary/20 text-textSecondary' :
+                  vectorizationStatus === 'completed' ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300' :
+                  'bg-red-500/5 border-red-500/20 text-red-300'
+                }`}>
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-white">ChromaDB Vectorization Status:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-textSecondary font-mono">(Polled {pollCount} times)</span>
+                      <span className={`font-mono text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                        vectorizationStatus === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
+                        vectorizationStatus === 'failed' ? 'bg-red-500/10 text-red-400 animate-pulse' :
+                        'bg-primary/10 text-primary animate-pulse'
+                      }`}>
+                        {vectorizationStatus}
+                      </span>
+                    </div>
+                  </div>
+
+                  {vectorizationStatus === 'processing' && (
+                    <div className="space-y-2 pt-2 border-t border-border/30">
+                      <div className="flex items-center gap-2 text-[10px] text-textSecondary">
+                        <Loader2 className="animate-spin text-primary shrink-0" size={12} />
+                        <span>Parsing SOW text and estimating tables...</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-textSecondary">
+                        <Loader2 className="animate-spin text-accent shrink-0" size={12} />
+                        <span>Chunking and running embedding models...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {vectorizationStatus === 'completed' && (
+                    <p className="text-[10px] text-emerald-400">
+                      ✅ SOW context parsed and indexed in vector space. Agents can now answer project deliverable questions.
+                    </p>
+                  )}
+
+                  {vectorizationStatus === 'failed' && (
+                    <p className="text-[10px] text-red-400 font-semibold">
+                      ❌ Failed: {vectorizationError || 'Vector database process faulted.'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs flex items-start gap-2.5">
+              <AlertCircle className="shrink-0 mt-0.5" size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-primary to-accent hover:from-indigo-600 hover:to-purple-600 text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30 active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} />
+                  <span>Submitting Ingestion Packet...</span>
+                </>
+              ) : (
+                <>
+                  <Plus size={18} />
+                  <span>Create Project & Ingest Files</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        <div className="border-t border-border/50 pt-6">
-          <h3 className="text-sm font-semibold text-white mb-4">📁 Upload Files for Collections</h3>
+        {/* RIGHT PANEL: File Drag zones */}
+        <div className="glass-panel p-6 rounded-2xl space-y-5 flex flex-col justify-between">
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-white uppercase tracking-wider">Collections Upload</h3>
+            <p className="text-xs text-textSecondary">Select documents to populate database tables and RAG memory layers.</p>
+          </div>
 
           <div className="space-y-4">
-            {/* CONTRACT COLLECTION */}
-            <div>
-              <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
-                📄 Contract Collection (.DOCX / .DOC / .PDF) *
-                <span className="text-[10px] lowercase text-textSecondary font-normal ml-2">SOW document, pricing, schedules, engagement dates</span>
-              </label>
-              <div className="flex items-center justify-between bg-background border border-border rounded-xl p-4">
+            
+            {/* CONTRACT UPLOAD CARD */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider">📄 SOW Contract (.docx/.pdf) *</span>
+                {contractFile && <span className="text-[10px] text-emerald-400 font-semibold">Ready</span>}
+              </div>
+              <div className={`dropzone-box ${contractFile ? 'active' : ''}`}>
                 <input
                   type="file"
                   accept=".docx,.doc,.pdf"
                   onChange={(e) => setContractFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="contract-file"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  id="sow-contract-picker"
                 />
-                <label
-                  htmlFor="contract-file"
-                  className="px-4 py-2 bg-surface hover:bg-white/5 border border-border text-white text-xs font-medium rounded-lg cursor-pointer transition-all active:scale-95"
-                >
-                  Choose File
-                </label>
-                <span className="text-xs text-textSecondary truncate max-w-lg">
-                  {contractFile ? contractFile.name : 'No file chosen'}
+                <FileText size={22} className={contractFile ? 'text-emerald-400' : 'text-textSecondary'} />
+                <span className="text-xs font-semibold text-white mt-1.5 max-w-full truncate">
+                  {contractFile ? contractFile.name : 'Select SOW document'}
+                </span>
+                <span className="text-[9px] text-textSecondary mt-0.5">
+                  {contractFile ? `${(contractFile.size / 1024).toFixed(1)} KB` : 'Engagement, terms, pricing limits'}
                 </span>
               </div>
             </div>
 
-            {/* ESTIMATION COLLECTION */}
-            <div>
-              <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
-                📊 Estimation-Milestone Collection (.XLSX) *
-                <span className="text-[10px] lowercase text-textSecondary font-normal ml-2">Excel sheet with resources (hours, costs), Travel & Expense, other costs</span>
-              </label>
-              <div className="flex items-center justify-between bg-background border border-border rounded-xl p-4">
+            {/* ESTIMATION UPLOAD CARD */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider">📊 Excel Estimates (.xlsx) *</span>
+                {estimationFile && <span className="text-[10px] text-emerald-400 font-semibold">Ready</span>}
+              </div>
+              <div className={`dropzone-box ${estimationFile ? 'active' : ''}`}>
                 <input
                   type="file"
                   accept=".xlsx"
                   onChange={(e) => setEstimationFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="estimation-file"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  id="estimation-picker"
                 />
-                <label
-                  htmlFor="estimation-file"
-                  className="px-4 py-2 bg-surface hover:bg-white/5 border border-border text-white text-xs font-medium rounded-lg cursor-pointer transition-all active:scale-95"
-                >
-                  Choose File
-                </label>
-                <span className="text-xs text-textSecondary truncate max-w-lg">
-                  {estimationFile ? estimationFile.name : 'No file chosen'}
+                <BarChart2 size={22} className={estimationFile ? 'text-emerald-400' : 'text-textSecondary'} />
+                <span className="text-xs font-semibold text-white mt-1.5 max-w-full truncate">
+                  {estimationFile ? estimationFile.name : 'Select Estimation spreadsheet'}
+                </span>
+                <span className="text-[9px] text-textSecondary mt-0.5">
+                  {estimationFile ? `${(estimationFile.size / 1024).toFixed(1)} KB` : 'Resource schedules, Travel & Expense costs'}
                 </span>
               </div>
             </div>
 
-            {/* PROJECT COLLECTION */}
-            <div>
-              <label className="block text-xs font-bold text-textSecondary uppercase tracking-widest mb-2">
-                🗃️ Project Collection (.XLSX) – Optional
-                <span className="text-[10px] lowercase text-textSecondary font-normal ml-2">ERP project data with metadata (codes, dates, financials)</span>
-              </label>
-              <div className="flex items-center justify-between bg-background border border-border rounded-xl p-4">
+            {/* PROJECT ERP METADATA UPLOAD CARD (OPTIONAL) */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider">🗃️ ERP Metadata (.xlsx) – Optional</span>
+                {projectFile && <span className="text-[10px] text-emerald-400 font-semibold">Linked</span>}
+              </div>
+              <div className={`dropzone-box ${projectFile ? 'active' : ''}`}>
                 <input
                   type="file"
                   accept=".xlsx"
                   onChange={(e) => setProjectFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="project-file"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  id="erp-picker"
                 />
-                <label
-                  htmlFor="project-file"
-                  className="px-4 py-2 bg-surface hover:bg-white/5 border border-border text-white text-xs font-medium rounded-lg cursor-pointer transition-all active:scale-95"
-                >
-                  Choose File
-                </label>
-                <span className="text-xs text-textSecondary truncate max-w-lg">
-                  {projectFile ? projectFile.name : 'No file chosen'}
+                <FileSpreadsheet size={22} className={projectFile ? 'text-emerald-400' : 'text-textSecondary'} />
+                <span className="text-xs font-semibold text-white mt-1.5 max-w-full truncate">
+                  {projectFile ? projectFile.name : 'Select ERP spreadsheet'}
+                </span>
+                <span className="text-[9px] text-textSecondary mt-0.5">
+                  {projectFile ? `${(projectFile.size / 1024).toFixed(1)} KB` : 'Optional ERP codes, milestones, financials'}
                 </span>
               </div>
             </div>
+
+          </div>
+
+          <div className="pt-2 text-center">
+            <span className="text-[10px] text-textSecondary italic">
+              All uploads are isolated per project ID and stored securely.
+            </span>
           </div>
         </div>
 
-        <div className="pt-4">
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-fit flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary to-accent hover:from-indigo-600 hover:to-purple-600 text-white rounded-xl font-medium shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30 active:scale-95 disabled:opacity-50"
-          >
-            {loading ? 'Creating...' : <><Plus size={18} /> Create Project</>}
-          </button>
-        </div>
       </form>
     </div>
   );

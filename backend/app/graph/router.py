@@ -29,6 +29,9 @@ RULE_KEYWORDS = {
         "add a risk", "add an issue", "create risk", "new risk",
         "create issue", "update raid", "update risk", "update action",
         "assign risk", "purchase order", "missing po",
+        "add a raid", "add raid", "create raid", "new raid",
+        "add risk", "add issue", "add dependency", "add assumption",
+        "create dependency", "create assumption",
     ],
     "risk_agent": [
         "risk analysis", "raid log", "risk matrix", "risk summary",

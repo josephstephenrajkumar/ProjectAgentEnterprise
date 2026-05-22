@@ -43,7 +43,8 @@ def create_raid_item(
     plan_version_id: str = None,
     impact_area: str = None,
     financial_impact: float = 0.0,
-    schedule_impact_days: int = 0
+    schedule_impact_days: int = 0,
+    roam: str = ""
 ) -> str:
     """Create a new RAID item."""
     try:
@@ -58,14 +59,14 @@ def create_raid_item(
             INSERT INTO RAIDitems (
                 raidID, project_id, LastupdateDate, Type, Category, owner,
                 Description, MitigatingAction, DueDate, Status, 
-                plan_version_id, impact_area, financial_impact, schedule_impact_days
+                plan_version_id, impact_area, financial_impact, schedule_impact_days, ROAM
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 raid_id, project_id, last_update, item_type, category, owner,
                 description, mitigating_action, due_date, status,
-                plan_version_id, impact_area, financial_impact, schedule_impact_days
+                plan_version_id, impact_area, financial_impact, schedule_impact_days, roam
             )
         )
         conn.commit()

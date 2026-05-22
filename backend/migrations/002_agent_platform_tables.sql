@@ -136,8 +136,8 @@ VALUES
  'Suggest new risks, issues, assumptions, or dependencies based on forecast variance, schedule slippage, and GM deterioration.',
  'approval_gated',
  'You are a proactive Delivery Manager. Review the existing RAID log and the latest project metrics. Suggest 2-3 specific risks or issues that may be missing or underweighted. For each suggestion, provide a description, category, impact area, and recommended mitigating action. Context: {context}. User asked: {query}',
- '["raid_fetch_tool", "metrics_calculator_tool", "summarize_tool", "approval_gate_tool"]',
- '["raid_fetch_tool", "metrics_calculator_tool", "summarize_tool", "approval_gate_tool"]',
+ '["create_raid_tool", "raid_fetch_tool", "metrics_calculator_tool", "summarize_tool", "approval_gate_tool"]',
+ '["create_raid_tool", "raid_fetch_tool", "metrics_calculator_tool", "summarize_tool", "approval_gate_tool"]',
  4, 1, 'markdown'),
 
 -- Contract/SOW Agent
@@ -146,8 +146,8 @@ VALUES
  'Validate milestones, acceptance criteria, obligations, pricing, and commercial clauses using RAG search over uploaded SOW documents.',
  'chat_responder',
  'You are a contract and commercial specialist. Using the following retrieved SOW excerpts, answer the question about contract terms, milestones, obligations, or acceptance criteria. Always cite the work package or clause reference. Context: {context}. User asked: {query}',
- '["rag_search_tool", "summarize_tool"]',
- '["rag_search_tool", "summarize_tool"]',
+ '["create_raid_tool", "rag_search_tool", "summarize_tool"]',
+ '["create_raid_tool", "rag_search_tool", "summarize_tool"]',
  3, 0, 'markdown'),
 
 -- Data Quality Agent
@@ -203,13 +203,23 @@ INSERT OR IGNORE INTO TriggerKeyword (keyword_id, agent_id, keyword, match_type,
 ('tkw_rev_03', 'revenue_recognition_agent', 'milestone met',        'contains', 2),
 
 -- RAID Recommendation Agent
-('tkw_rad_01', 'raid_recommendation_agent', 'add a risk',      'contains', 1),
-('tkw_rad_02', 'raid_recommendation_agent', 'add an issue',    'contains', 1),
-('tkw_rad_03', 'raid_recommendation_agent', 'create risk',     'contains', 1),
-('tkw_rad_04', 'raid_recommendation_agent', 'new risk',        'contains', 1),
-('tkw_rad_05', 'raid_recommendation_agent', 'create issue',    'contains', 1),
-('tkw_rad_06', 'raid_recommendation_agent', 'update raid',     'contains', 2),
-('tkw_rad_07', 'raid_recommendation_agent', 'missing po',      'contains', 3),
+('tkw_rad_01', 'raid_recommendation_agent', 'add a risk',        'contains', 1),
+('tkw_rad_02', 'raid_recommendation_agent', 'add an issue',      'contains', 1),
+('tkw_rad_03', 'raid_recommendation_agent', 'create risk',       'contains', 1),
+('tkw_rad_04', 'raid_recommendation_agent', 'new risk',          'contains', 1),
+('tkw_rad_05', 'raid_recommendation_agent', 'create issue',      'contains', 1),
+('tkw_rad_06', 'raid_recommendation_agent', 'update raid',       'contains', 2),
+('tkw_rad_07', 'raid_recommendation_agent', 'missing po',        'contains', 3),
+('tkw_rad_08', 'raid_recommendation_agent', 'add a raid',        'contains', 1),
+('tkw_rad_09', 'raid_recommendation_agent', 'add raid',          'contains', 1),
+('tkw_rad_10', 'raid_recommendation_agent', 'create raid',       'contains', 1),
+('tkw_rad_11', 'raid_recommendation_agent', 'new raid',          'contains', 1),
+('tkw_rad_12', 'raid_recommendation_agent', 'add risk',          'contains', 1),
+('tkw_rad_13', 'raid_recommendation_agent', 'add issue',         'contains', 1),
+('tkw_rad_14', 'raid_recommendation_agent', 'add dependency',    'contains', 1),
+('tkw_rad_15', 'raid_recommendation_agent', 'add assumption',    'contains', 1),
+('tkw_rad_16', 'raid_recommendation_agent', 'create dependency', 'contains', 1),
+('tkw_rad_17', 'raid_recommendation_agent', 'create assumption', 'contains', 1),
 
 -- Contract/SOW Agent
 ('tkw_sow_01', 'contract_sow_agent', 'contract terms',       'contains', 1),

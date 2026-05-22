@@ -127,6 +127,108 @@ def _update_vector_status(project_id: str, status: str, error: Optional[str] = N
         conn.close()
 
 
+def slice_sow_text_for_wps(text: str) -> str:
+    import re
+    lines = text.split("\n")
+    wp_line_indices = []
+    # Match 'work package #' or 'workpackage #' or 'work package \d+' or 'workpackage \d+'
+    pattern = re.compile(r"work\s*package\s*(#|\d+)", re.IGNORECASE)
+    for i, line in enumerate(lines):
+        if pattern.search(line):
+            wp_line_indices.append(i)
+            
+    if not wp_line_indices:
+        return text  # fallback to full text
+        
+    start_idx = max(0, min(wp_line_indices) - 5)
+    end_idx = min(len(lines), max(wp_line_indices) + 10)
+    return "\n".join(lines[start_idx:end_idx])
+
+
+def _extract_and_queue_work_packages(project_id: str, contract_path: str) -> None:
+    """Extract work packages from SOW and queue them for PM approval."""
+    import json
+    from langchain_community.document_loaders import UnstructuredFileLoader
+    from app.agents.llm_factory import get_llm
+    from langchain_core.messages import SystemMessage, HumanMessage
+    from app.services.approval_service import create_approval_request
+
+    print(f"[Ingestion] Parsing work packages from SOW contract: {contract_path}")
+    try:
+        loader = UnstructuredFileLoader(contract_path)
+        docs = loader.load()
+        if not docs:
+            print(f"[Ingestion] ⚠️ No content found in SOW to parse work packages: {contract_path}")
+            return
+
+        text = "\n".join(d.page_content for d in docs)
+        sliced_text = slice_sow_text_for_wps(text)
+        print(f"[Ingestion] SOW text loaded. Sliced size: {len(sliced_text)} chars (original: {len(text)} chars)")
+
+        llm = get_llm()
+        system_prompt = """You are an expert contract parser. Analyze the SOW contract text and extract all Work Packages (also referred to as phases). 
+For each unique Work Package, extract the following fields:
+- phase_name: The name/title of the work package (e.g. "Work Package #1 - Project kick-off and Project Planning")
+- phase_order: The integer number of the work package (e.g. 1 for Work Package #1, 5 for Work Package #5)
+- prerequisites: Prerequisites mentioned for this work package
+- activities: Key activities/tasks to be performed
+- customer_responsibilities: What the customer is responsible for
+- out_of_scope: What is explicitly out of scope for this package
+- risks_mitigations: Associated risks and mitigations
+- deliverables: Deliverables or configurations produced
+- acceptance_criteria: Acceptance criteria
+- overview: A concise high-level overview or summary of the phase
+- engagement_summary: Narrative overview of the engagement model, onsite/remote layout, or resource deployment for the phase
+- scope: Detailed description of the technical scope for the phase
+- tech_landscape: Specific technology landscape elements relevant to the phase (e.g., SaaS vs. on-premises CIT/OPB configurations, integrations)
+- key_deliverables: Key documents, checklists, or setups delivered in this phase
+- missing_items: Unspecified assumptions or missing items in the SOW for this phase
+- next_steps: Immediate next steps or action items for the phase
+- quick_summary: Concise, single-sentence visual summary of the phase's main goal
+
+CRITICAL INSTRUCTIONS:
+1. Do not extract duplicate packages. Some work packages have multiple headers or table titles in the document (e.g. one in a heading, one in a detail table). De-duplicate them and extract each unique Work Package exactly once.
+2. Ensure you do not miss any packages (especially Work Package #5, #6, #9, #10, and all others from #1 to #11).
+3. Order the extracted work packages by phase_order in ascending order.
+4. Respond ONLY with a valid JSON array of objects, containing the fields: phase_name (string), phase_order (integer), prerequisites (string), activities (string), customer_responsibilities (string), out_of_scope (string), risks_mitigations (string), deliverables (string), acceptance_criteria (string), overview (string), engagement_summary (string), scope (string), tech_landscape (string), key_deliverables (string), missing_items (string), next_steps (string), quick_summary (string). Do not add markdown backticks or any introductory/explanatory text.
+"""
+
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=sliced_text)
+        ])
+
+        result_content = response.content.strip()
+        if result_content.startswith("```"):
+            lines = result_content.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].startswith("```"):
+                lines = lines[:-1]
+            result_content = "\n".join(lines).strip()
+
+        try:
+            work_packages = json.loads(result_content)
+            if not isinstance(work_packages, list):
+                raise ValueError("Extracted work packages must be a list of objects")
+        except Exception as parse_err:
+            print(f"[Ingestion] ⚠️ Failed to parse LLM extraction response as JSON: {parse_err}")
+            print(f"Raw response: {result_content}")
+            return
+
+        description = f"Ingested {len(work_packages)} work packages from SOW contract document. Review and approve to import into database."
+        approval_id = create_approval_request(
+            project_id=project_id,
+            approval_type="WorkPackageIngestion",
+            description=description,
+            proposed_changes=work_packages,
+            requested_by_agent="Contract Agent"
+        )
+        print(f"[Ingestion] Ingested work packages queued for approval (approval_id: {approval_id})")
+    except Exception as e:
+        print(f"[Ingestion] ⚠️ Work package extraction failed: {e}")
+
+
 def _run_ingestion_pipeline(
     project_id: str,
     contract_path: Optional[str],
@@ -216,6 +318,8 @@ def _run_ingestion_pipeline(
             )
             print(f"[Ingestion] SOW vectorized into collection: {collection_name}")
             _update_vector_status(project_id, "completed")
+            # Extract and queue work packages for approval
+            _extract_and_queue_work_packages(project_id, contract_path)
         except Exception as e:
             print(f"[Ingestion] ⚠️ SOW vectorization failed: {e}")
             _update_vector_status(project_id, "failed", str(e))
@@ -495,11 +599,17 @@ def delete_project(identifier: str):
         
         pid, pcode = row
         
-        # Delete from SQLite (manually cascade deletes for tables lacking ON DELETE CASCADE)
+        # Delete from SQLite (manually cascade deletes for all tables to prevent any orphans)
+        cursor.execute("DELETE FROM ProjectWorkPackage WHERE project_id = ?", (pid,))
+        cursor.execute("DELETE FROM ProjectWeeklySummary WHERE project_id = ?", (pid,))
+        cursor.execute("DELETE FROM RAIDitems WHERE project_id = ?", (pid,))
+        cursor.execute("DELETE FROM MBRitems WHERE project_id = ?", (pid,))
         cursor.execute("DELETE FROM ProjectPlanVersion WHERE project_id = ?", (pid,))
         cursor.execute("DELETE FROM ActualFinancialMonth WHERE project_id = ?", (pid,))
         cursor.execute("DELETE FROM ForecastMetricSnapshot WHERE project_id = ?", (pid,))
         cursor.execute("DELETE FROM RevenueRecognitionTrace WHERE project_id = ?", (pid,))
+        cursor.execute("DELETE FROM HumanApprovalQueue WHERE project_id = ?", (pid,))
+        cursor.execute("DELETE FROM AgentActionLog WHERE project_id = ?", (pid,))
         cursor.execute("DELETE FROM Project WHERE project_id = ?", (pid,))
         conn.commit()
         conn.close()
@@ -632,4 +742,97 @@ async def run_e2e_tests():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to execute tests: {str(e)}")
+
+
+@router.post("/projects/database/reset")
+def reset_database():
+    """Wipe all project-specific tables, reset KuzuDB, ChromaDB collections, clear docs files and chat sessions."""
+    try:
+        # 1. Clear SQLite tables
+        conn = sqlite3.connect(settings.db_abs_path)
+        conn.execute("PRAGMA foreign_keys = ON;")
+        cursor = conn.cursor()
+        
+        tables_to_wipe = [
+            "ProjectWorkPackage",
+            "ProjectWeeklySummary",
+            "RAIDitems",
+            "MBRitems",
+            "PlanResourceMonth",
+            "PlanResource",
+            "PlanInvoiceMilestone",
+            "PlanRevenueMilestone",
+            "PlanTravelCost",
+            "PlanOtherCost",
+            "PlanMonthlySummary",
+            "ProjectPlanVersion",
+            "ActualFinancialMonth",
+            "ForecastMetricSnapshot",
+            "RevenueRecognitionTrace",
+            "AgentActionLog",
+            "HumanApprovalQueue",
+            "SqlQueryMemory",
+            "Project"
+        ]
+        
+        for table in tables_to_wipe:
+            try:
+                cursor.execute(f"DELETE FROM {table}")
+            except Exception as e:
+                print(f"[ResetDB] Warning: failed to wipe SQLite table {table}: {e}")
+                
+        conn.commit()
+        conn.close()
+        print("[ResetDB] SQLite tables cleared.")
+        
+        # 2. Reset KuzuDB by wiping and recreating schema
+        try:
+            from app.services.kuzu_service import recreate_kuzudb
+            recreate_kuzudb()
+            print("[ResetDB] Successfully reset KuzuDB to clean schema.")
+        except Exception as e:
+            print(f"[ResetDB] Warning: failed to reset KuzuDB: {e}")
+            
+        # 3. Clean ChromaDB collections
+        try:
+            import chromadb
+            client = chromadb.PersistentClient(path=settings.chroma_abs_path)
+            for col in client.list_collections():
+                try:
+                    client.delete_collection(col.name)
+                    print(f"[ResetDB] Deleted ChromaDB collection: {col.name}")
+                except Exception as ex:
+                    print(f"[ResetDB] Warning: failed to delete ChromaDB collection {col.name}: {ex}")
+        except Exception as e:
+            print(f"[ResetDB] Warning: failed to reset ChromaDB: {e}")
+            
+        # 4. Wipe docs/projects directory
+        try:
+            project_dir = os.path.join(
+                settings.db_abs_path.replace("openclaw.db", ""),
+                "docs", "projects"
+            )
+            if os.path.exists(project_dir):
+                shutil.rmtree(project_dir, ignore_errors=True)
+                os.makedirs(project_dir, exist_ok=True)
+                print("[ResetDB] Cleared project docs directory.")
+        except Exception as e:
+            print(f"[ResetDB] Warning: failed to wipe docs/projects directory: {e}")
+            
+        # 5. Clear chat sessions
+        try:
+            from app.api.chat import SESSION_STORE, _save_sessions
+            SESSION_STORE.clear()
+            _save_sessions(SESSION_STORE)
+            print("[ResetDB] Cleared all chat sessions.")
+        except Exception as e:
+            print(f"[ResetDB] Warning: failed to clear chat sessions: {e}")
+            
+        return {
+            "status": "success",
+            "message": "The entire database, including KuzuDB, ChromaDB collections, chat history, and documents, has been completely reset."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset database: {str(e)}")
+
 
